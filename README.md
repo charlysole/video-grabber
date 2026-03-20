@@ -107,4 +107,5 @@ Video Grabber is a native SwiftUI wrapper around `yt-dlp` and `ffmpeg`. It:
 
 This software is proprietary.  
 You may not copy, modify, or redistribute it without permission.
-If you find it useful, you can support the project via donations.
+If you find it useful, you can support the project via [donations](https://www.paypal.com/donate?business=G8KQK7TRUJLJ6&no_recurring=0&item_name=Support+Video+Grabber+to+keep+a+simple%2C+powerful+macOS+video+tool+growing+and+improving+for+everyone.&currency_code=USD
+)
