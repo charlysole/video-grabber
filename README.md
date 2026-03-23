@@ -1,111 +1,113 @@
 # Video Grabber
 
-A native macOS video downloader built with SwiftUI. Supports hundreds of platforms through yt-dlp, with built-in video processing via ffmpeg — all from a clean, native interface.
+A native macOS video downloader built with SwiftUI. Paste any URL, pick your settings, and download — powered by yt-dlp and ffmpeg under the hood.
+
+![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
+![Swift](https://img.shields.io/badge/Swift-5.9-orange)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Notarized](https://img.shields.io/badge/notarized-yes-brightgreen)
+
+---
+
+## Download
+
+**[→ Download latest release](../../releases/latest)**
+
+Requires macOS 13 Ventura or later.
+
+---
 
 ## Features
 
 ### Downloading
-- **Multi-URL queue** — add URLs one by one with the + button; each gets its own settings
+- **Multi-URL queue** — add multiple URLs, each with its own settings
 - **Concurrent downloads** — configurable simultaneous download limit
-- **Platform presets** — auto-detects YouTube, Instagram, Vimeo, Facebook, X/Twitter, Frame.io, M3U8 streams, and more
+- **1000+ supported sites** — YouTube, Instagram, TikTok, Vimeo, X/Twitter, Facebook, M3U8 streams, and [many more](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
 - **Playlist support** — detects playlists and lets you pick which entries to download
 - **Format & quality picker** — browse available formats and resolutions before downloading
 - **Audio extraction** — download as MP3 directly
 - **Subtitle download** — fetch automatic subtitles (English/Spanish)
 - **Scheduled downloads** — set a future date and time for any job
 
-### Per-URL Settings (via ⚙️ popover)
-- **Video trim** — set start and end time with H:MM:SS fields
-- **Format conversion** — convert to MP4, MOV, MKV, AVI after download
+### Per-URL Settings
+- **Video trim** — set start and end time (H:MM:SS)
+- **Format conversion** — convert to MP4, MOV, MKV, or AVI after download
 - **Compress to target size** — two-pass ffmpeg encoding to hit a specific MB target
-- **Subtitle download** — per-URL toggle
 - **Integrity verification** — verify the file after download
 
 ### Queue Management
 - **Pause / Resume** — suspend and continue individual jobs
-- **Cancel** — stop any running download
-- **Re-run** — restart a completed or failed job
+- **Cancel / Re-run** — stop or restart any job
 - **Clear finished** — clean up the queue in one click
 
 ### History
 - **Persistent history** — all completed downloads saved across launches
-- **Selectable cells** — right-click any field to copy (URL, filename, status, etc.)
-- **Filter** — search by URL, filename, or status
+- **Search & filter** — by URL, filename, or status
 - **Export** — save history as CSV or JSON
-- **Clear history** — wipe all records
 
 ### System Integration
-- **macOS Service** — right-click any URL in Safari or any app and choose "Download with Video Grabber"
-- **Quick Look** — preview downloaded files in-app without opening Finder
+- **macOS Service** — right-click any URL in Safari or any app → "Download with Video Grabber"
+- **Quick Look** — preview downloaded files without opening Finder
 - **Desktop notifications** — get notified when downloads finish or fail
 - **Dock badge** — shows active download count
 
 ---
 
-## Requirements
+## Installation
 
-- macOS 13 Ventura or later
-- [Homebrew](https://brew.sh) (for installing dependencies)
+1. Download the `.dmg` from the [Releases](../../releases/latest) page
+2. Open the `.dmg` and drag **Video Grabber.app** to your Applications folder
+3. Open the app — on first launch it will guide you through installing yt-dlp and ffmpeg via Homebrew
 
-### Dependencies (installed automatically)
+> The app is notarized by Apple, so it opens without any security warnings.
+
+### Dependencies (installed automatically on first launch)
+
 | Tool | Purpose |
 |------|---------|
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Video downloading from 1000+ sites |
 | [ffmpeg](https://ffmpeg.org) | Compression, trimming, format conversion |
-
-On first launch, Video Grabber will guide you through installing missing dependencies via Homebrew.
-
----
-
-## Supported Platforms
-
-Any site supported by yt-dlp works, including:
-
-- YouTube (videos, playlists, Shorts)
-- Instagram (Reels, public posts)
-- Facebook (public videos)
-- Vimeo
-- X / Twitter
-- TikTok
-- M3U8 / HLS streams
-- Frame.io direct links
-- And [1000+ more](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md)
+| [Homebrew](https://brew.sh) | Package manager (required to install the above) |
 
 ---
 
-## Installation
+## Building from Source
 
-1. Download the latest release from the [Releases](../../releases) page
-2. Move `Video Grabber.app` to your Applications folder
-3. Open it — on first launch, follow the setup wizard to install yt-dlp and ffmpeg
+```bash
+git clone https://github.com/yourusername/video-grabber.git
+cd "video-grabber/Video grabber"
+open "Video grabber.xcodeproj"
+```
 
-> **Note:** macOS may show a security warning on first open. Go to **System Settings → Privacy & Security** and click "Open Anyway".
+Build and run with Xcode 15 or later. No additional setup needed — dependencies are managed at runtime.
 
 ---
 
 ## Localization
 
-The interface is available in:
-- **English** (default)
-- **Spanish** — automatically applied when macOS is set to Spanish
+- English (default)
+- Spanish — applied automatically when macOS is set to Spanish
 
 ---
 
 ## How It Works
 
-Video Grabber is a native SwiftUI wrapper around `yt-dlp` and `ffmpeg`. It:
+Video Grabber is a native SwiftUI wrapper around `yt-dlp` and `ffmpeg`:
 
-1. Manages download jobs as a queue with a configurable concurrency limit
-2. Spawns `yt-dlp` subprocesses and streams their output in real time
-3. Parses progress, speed, ETA, and filenames from yt-dlp's stdout
-4. Chains `ffmpeg` post-processing for compression, trimming, and format conversion
+1. Manages download jobs as a queue with configurable concurrency
+2. Spawns `yt-dlp` subprocesses and streams output in real time
+3. Parses progress, speed, ETA, and filenames from stdout
+4. Chains `ffmpeg` for post-processing (compression, trimming, conversion)
 5. Stores history locally using `UserDefaults`
+
+---
+
+## Support
+
+If you find Video Grabber useful, consider [making a donation](https://www.paypal.com/donate?business=G8KQK7TRUJLJ6&no_recurring=0&item_name=Support+Video+Grabber+to+keep+a+simple%2C+powerful+macOS+video+tool+growing+and+improving+for+everyone.&currency_code=USD) to support development.
 
 ---
 
 ## License
 
-This software is proprietary.  
-You may not copy, modify, or redistribute it without permission.
-If you find it useful, you can support the project via [donations](https://www.paypal.com/donate?business=G8KQK7TRUJLJ6&no_recurring=0&item_name=Support+Video+Grabber+to+keep+a+simple%2C+powerful+macOS+video+tool+growing+and+improving+for+everyone.&currency_code=USD
-)
+MIT — see [LICENSE](LICENSE) for details.
