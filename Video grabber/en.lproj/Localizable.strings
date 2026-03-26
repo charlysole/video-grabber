@@ -1,0 +1,193 @@
+/* Welcome screen */
+"welcome_title" = "Welcome to Video Grabber";
+"welcome_subtitle" = "Everything you need is already included — no setup required.";
+"welcome_body_1" = "yt-dlp and ffmpeg are bundled with the app and ready to use.";
+"welcome_body_2" = "Paste a URL and start downloading right away.";
+"welcome_dont_show_again" = "Don't show this window again";
+"welcome_open_settings" = "Open Settings";
+"welcome_continue" = "Continue";
+
+/* Preferences */
+"prefs_title" = "Preferences";
+"prefs_subtitle" = "yt-dlp and ffmpeg are bundled with the app. Use the Update button to get the latest yt-dlp.";
+"prefs_deps_header" = "Dependencies";
+"prefs_recheck" = "Check Again";
+"prefs_show_welcome_again" = "Show Welcome Again";
+
+/* Dependency rows */
+"dep_handbrake_title" = "HandBrake (optional)";
+"dep_not_installed_path" = "Not installed";
+"dep_installed" = "Installed";
+"dep_not_installed" = "Not installed";
+"dep_install_btn" = "Install";
+"dep_update_btn" = "Update";
+"dep_updating" = "Updating...";
+"dep_bundled" = "Bundled";
+
+/* Status enum raw values used as localization keys */
+"En cola" = "Queued";
+"Descargando" = "Downloading";
+"Pausado" = "Paused";
+"Completado" = "Completed";
+"Error" = "Error";
+"Cancelado" = "Cancelled";
+"Programado" = "Scheduled";
+"Comprimiendo" = "Compressing";
+
+/* Sidebar */
+"app_subtitle" = "macOS frontend for downloads, queues, and history.";
+"sidebar_inputs_header" = "Inputs";
+"sidebar_url_hint" = "Paste multiple URLs, one per line or separated by spaces. You can also drag links here.";
+"sidebar_auto_detect" = "Auto-detect platform";
+"sidebar_extract_mp3" = "Extract audio only as MP3";
+"sidebar_subtitles" = "Download automatic subtitles (es, en)";
+"sidebar_compress_target" = "Compress to target size";
+"sidebar_manual_preset" = "Manual preset";
+"sidebar_destination_header" = "Destination";
+"sidebar_choose_folder" = "Choose Folder";
+"sidebar_set_to_downloads" = "Set to Downloads Folder";
+"sidebar_open_folder" = "Open Folder";
+"sidebar_icloud_drive" = "iCloud Drive";
+"sidebar_add_to_queue" = "Add to Queue";
+"sidebar_cancel_current" = "Cancel Current";
+"sidebar_clear" = "Clear";
+"sidebar_capture_m3u8" = "Capture m3u8";
+"sidebar_open_handbrake" = "Open HandBrake";
+
+/* Tabs */
+"tab_queue" = "Queue";
+"tab_history" = "History";
+
+/* Queue table columns */
+"col_created" = "Created";
+"col_preset" = "Preset";
+"col_url" = "URL";
+"col_progress" = "Progress";
+"col_status" = "Status";
+"col_file" = "File";
+
+/* History table columns */
+"col_date" = "Date";
+
+/* Queue tab */
+"queue_title" = "Download Queue";
+"queue_hint" = "Double-click a row to re-download from the same source.";
+
+/* Detail panel */
+"detail_title" = "Detail";
+"detail_no_file_yet" = "Output file not yet detected.";
+"detail_pause" = "Pause";
+"detail_resume" = "Resume";
+"detail_schedule" = "Schedule";
+"detail_quality" = "Quality";
+"detail_retry_no_mp4" = "Retry without MP4";
+"detail_open_file" = "Open File";
+"detail_open_folder" = "Open Folder";
+"detail_show_log" = "Show Log";
+"detail_hide_log" = "Hide Log";
+"detail_no_percent" = "No percentage";
+"detail_speed_fmt" = "Speed: %@";
+"detail_scheduled_fmt" = "Scheduled: %@";
+"detail_no_log_yet" = "No log yet.";
+"detail_select_download" = "Select a Download";
+
+/* History tab */
+"history_title" = "History";
+"history_export_csv" = "Export CSV";
+"history_export_json" = "Export JSON";
+"history_filter_status" = "Status";
+"history_filter_platform" = "Platform";
+"history_date_from" = "From";
+"history_date_to" = "To";
+"history_results_count" = "%d result(s)";
+
+/* History filter options */
+"filter_all" = "All";
+"filter_completed" = "Completed";
+"filter_error" = "Error";
+"filter_cancelled" = "Cancelled";
+
+/* Context menu */
+"ctx_pause_download" = "Pause Download";
+"ctx_cancel_download" = "Cancel Download";
+"ctx_resume_download" = "Resume Download";
+"ctx_cancel_schedule" = "Cancel Schedule";
+"ctx_restart_download" = "Restart Download";
+"ctx_delete" = "Delete";
+"ctx_open_file" = "Open File";
+"ctx_open_folder" = "Open Folder";
+"ctx_show_log" = "Show Log";
+"ctx_hide_log" = "Hide Log";
+
+/* Quality picker sheet */
+"quality_picker_title" = "Select Quality";
+"quality_picker_fetching" = "Fetching available formats…";
+"quality_picker_no_formats" = "No formats found.";
+"quality_picker_apply" = "Apply Quality";
+
+/* Playlist picker sheet */
+"playlist_picker_title" = "Select Playlist Videos";
+"playlist_selected_count" = "%d / %d selected";
+"playlist_picker_loading" = "Loading playlist entries…";
+"playlist_select_all" = "Select All";
+"playlist_deselect_all" = "Deselect All";
+"playlist_download_selected" = "Download Selected";
+
+/* Scheduler sheet */
+"scheduler_title" = "Schedule Download";
+"scheduler_subtitle" = "The download will start automatically at the selected date and time.";
+"scheduler_date_label" = "Date and time";
+"scheduler_schedule_btn" = "Schedule";
+
+/* Shared buttons */
+"btn_cancel" = "Cancel";
+
+/* M3U8 helper */
+"m3u8_title" = "Capture m3u8 from Browser";
+"m3u8_description" = "This app cannot directly inspect browser tabs without an additional extension or native component. That is why this button opens a built-in guide for capturing it manually, or for connecting it with a Safari/Chrome extension in a later phase.";
+"m3u8_workflow_header" = "Recommended workflow";
+"m3u8_step_1" = "1. Open the video page in Chrome or Firefox.";
+"m3u8_step_2" = "2. Open Inspector / Network.";
+"m3u8_step_3" = "3. Reload the page and filter by m3u8.";
+"m3u8_step_4" = "4. Copy the URL found.";
+"m3u8_step_5" = "5. Paste it into the app to download it using the M3U8 / Streaming preset.";
+"m3u8_future_header" = "Next technical evolution";
+"m3u8_future_1" = "• Safari Web Extension to detect .m3u8 requests";
+"m3u8_future_2" = "• Communication with the app via native messaging or custom URL scheme";
+"m3u8_future_3" = "• 'Send to Video Grabber' button from the browser";
+
+/* Notifications */
+"notif_download_complete" = "Download Complete";
+"notif_download_error" = "Download Error";
+"notif_compression_complete" = "Compression Complete";
+
+
+/* History table actions */
+"copy" = "Copy";
+"history_clear" = "Clear History";
+
+/* Feature: Concurrent downloads */
+"max_concurrent" = "Max simultaneous downloads";
+
+/* Feature: Video trimming */
+"trim_video" = "Trim video";
+"trim_start_placeholder" = "Start (00:00:00)";
+"trim_end_placeholder" = "End (00:00:00)";
+
+/* Feature: Format conversion */
+"convert_format" = "Convert to format";
+"convert_no_conversion" = "No conversion";
+
+/* Feature: Quick Look */
+"quick_look" = "Quick Look";
+
+/* Feature: Integrity verification */
+"verify_integrity" = "Verify file integrity after download";
+"integrity_ok" = "Integrity OK";
+"integrity_corrupt" = "File may be corrupted";
+
+/* Staged URL input */
+"url_placeholder" = "Paste or type a URL...";
+"sidebar_urls_label" = "URLs";
+"staged_settings_title" = "Video Settings";
+"sidebar_start" = "Start";

@@ -1,0 +1,193 @@
+/* Welcome screen */
+"welcome_title" = "Bienvenido a Video Grabber";
+"welcome_subtitle" = "Todo lo necesario ya está incluido, no hace falta configurar nada.";
+"welcome_body_1" = "yt-dlp y ffmpeg vienen empaquetados con la app y están listos para usar.";
+"welcome_body_2" = "Pegá una URL y empezá a descargar de inmediato.";
+"welcome_dont_show_again" = "No volver a mostrar esta ventana";
+"welcome_open_settings" = "Abrir Settings";
+"welcome_continue" = "Continuar";
+
+/* Preferences */
+"prefs_title" = "Preferencias";
+"prefs_subtitle" = "yt-dlp y ffmpeg están incluidos en la app. Usá el botón Actualizar para obtener la última versión de yt-dlp.";
+"prefs_deps_header" = "Dependencias";
+"prefs_recheck" = "Revisar nuevamente";
+"prefs_show_welcome_again" = "Volver a mostrar bienvenida";
+
+/* Dependency rows */
+"dep_handbrake_title" = "HandBrake (opcional)";
+"dep_not_installed_path" = "No instalado";
+"dep_installed" = "Instalado";
+"dep_not_installed" = "No instalado";
+"dep_install_btn" = "Instalar";
+"dep_update_btn" = "Actualizar";
+"dep_updating" = "Actualizando...";
+"dep_bundled" = "Incluido";
+
+/* Status enum raw values used as localization keys */
+"En cola" = "En cola";
+"Descargando" = "Descargando";
+"Pausado" = "Pausado";
+"Completado" = "Completado";
+"Error" = "Error";
+"Cancelado" = "Cancelado";
+"Programado" = "Programado";
+"Comprimiendo" = "Comprimiendo";
+
+/* Sidebar */
+"app_subtitle" = "Frontend macOS para descargas, colas e historial.";
+"sidebar_inputs_header" = "Entradas";
+"sidebar_url_hint" = "Pegá varias URLs, una por línea o separadas por espacios. También podés arrastrar links aquí.";
+"sidebar_auto_detect" = "Detección automática de plataforma";
+"sidebar_extract_mp3" = "Extraer solo el audio en MP3";
+"sidebar_subtitles" = "Descargar subtítulos automáticos (es, en)";
+"sidebar_compress_target" = "Comprimir a tamaño objetivo";
+"sidebar_manual_preset" = "Preset manual";
+"sidebar_destination_header" = "Destino";
+"sidebar_choose_folder" = "Elegir carpeta";
+"sidebar_set_to_downloads" = "Volver a Descargas";
+"sidebar_open_folder" = "Abrir carpeta";
+"sidebar_icloud_drive" = "iCloud Drive";
+"sidebar_add_to_queue" = "Agregar a la cola";
+"sidebar_cancel_current" = "Cancelar actual";
+"sidebar_clear" = "Limpiar";
+"sidebar_capture_m3u8" = "Capturar m3u8";
+"sidebar_open_handbrake" = "Abrir HandBrake";
+
+/* Tabs */
+"tab_queue" = "Cola";
+"tab_history" = "Historial";
+
+/* Queue table columns */
+"col_created" = "Creado";
+"col_preset" = "Preset";
+"col_url" = "URL";
+"col_progress" = "Progreso";
+"col_status" = "Estado";
+"col_file" = "Archivo";
+
+/* History table columns */
+"col_date" = "Fecha";
+
+/* Queue tab */
+"queue_title" = "Cola de descargas";
+"queue_hint" = "Doble click en una fila para descargar de nuevo desde la misma fuente.";
+
+/* Detail panel */
+"detail_title" = "Detalle";
+"detail_no_file_yet" = "Archivo final aún no detectado.";
+"detail_pause" = "Pausar";
+"detail_resume" = "Reanudar";
+"detail_schedule" = "Programar";
+"detail_quality" = "Calidad";
+"detail_retry_no_mp4" = "Reintentar sin MP4";
+"detail_open_file" = "Abrir archivo";
+"detail_open_folder" = "Abrir carpeta";
+"detail_show_log" = "Ver Log";
+"detail_hide_log" = "Ocultar Log";
+"detail_no_percent" = "Sin porcentaje";
+"detail_speed_fmt" = "Velocidad: %@";
+"detail_scheduled_fmt" = "Programado: %@";
+"detail_no_log_yet" = "Sin log todavía.";
+"detail_select_download" = "Seleccioná una descarga";
+
+/* History tab */
+"history_title" = "Historial";
+"history_export_csv" = "Exportar CSV";
+"history_export_json" = "Exportar JSON";
+"history_filter_status" = "Estado";
+"history_filter_platform" = "Plataforma";
+"history_date_from" = "Desde";
+"history_date_to" = "Hasta";
+"history_results_count" = "%d resultado(s)";
+
+/* History filter options */
+"filter_all" = "Todos";
+"filter_completed" = "Completado";
+"filter_error" = "Error";
+"filter_cancelled" = "Cancelado";
+
+/* Context menu */
+"ctx_pause_download" = "Pausar descarga";
+"ctx_cancel_download" = "Cancelar descarga";
+"ctx_resume_download" = "Reanudar descarga";
+"ctx_cancel_schedule" = "Cancelar programación";
+"ctx_restart_download" = "Reiniciar descarga";
+"ctx_delete" = "Eliminar";
+"ctx_open_file" = "Abrir archivo";
+"ctx_open_folder" = "Abrir carpeta";
+"ctx_show_log" = "Ver Log";
+"ctx_hide_log" = "Ocultar Log";
+
+/* Quality picker sheet */
+"quality_picker_title" = "Seleccionar calidad";
+"quality_picker_fetching" = "Obteniendo formatos disponibles...";
+"quality_picker_no_formats" = "No se encontraron formatos.";
+"quality_picker_apply" = "Aplicar calidad";
+
+/* Playlist picker sheet */
+"playlist_picker_title" = "Seleccionar videos de la playlist";
+"playlist_selected_count" = "%d / %d seleccionados";
+"playlist_picker_loading" = "Cargando entradas de la playlist...";
+"playlist_select_all" = "Seleccionar todo";
+"playlist_deselect_all" = "Deseleccionar todo";
+"playlist_download_selected" = "Descargar seleccionados";
+
+/* Scheduler sheet */
+"scheduler_title" = "Programar descarga";
+"scheduler_subtitle" = "La descarga empezará automáticamente en la fecha y hora seleccionadas.";
+"scheduler_date_label" = "Fecha y hora";
+"scheduler_schedule_btn" = "Programar";
+
+/* Shared buttons */
+"btn_cancel" = "Cancelar";
+
+/* M3U8 helper */
+"m3u8_title" = "Capturar m3u8 desde navegador";
+"m3u8_description" = "Esta app no puede inspeccionar directamente las pestañas del navegador sin una extensión o componente nativo adicional. Por eso, este botón abre una guía integrada para capturarlo manualmente o en una siguiente fase conectarlo con una extensión de Safari/Chrome.";
+"m3u8_workflow_header" = "Flujo recomendado";
+"m3u8_step_1" = "1. Abrí la página del video en Chrome o Firefox.";
+"m3u8_step_2" = "2. Abrí Inspector / Network.";
+"m3u8_step_3" = "3. Recargá la página y filtrá por m3u8.";
+"m3u8_step_4" = "4. Copiá la URL encontrada.";
+"m3u8_step_5" = "5. Pegala en la app para descargarla como preset M3U8 / Streaming.";
+"m3u8_future_header" = "Siguiente evolución técnica";
+"m3u8_future_1" = "• Safari Web Extension que detecte requests .m3u8";
+"m3u8_future_2" = "• Comunicación con la app vía native messaging o custom URL scheme";
+"m3u8_future_3" = "• Botón 'Enviar a Video Grabber' desde el navegador";
+
+/* Notifications */
+"notif_download_complete" = "Descarga completada";
+"notif_download_error" = "Error en descarga";
+"notif_compression_complete" = "Compresión completada";
+
+
+/* History table actions */
+"copy" = "Copiar";
+"history_clear" = "Limpiar historial";
+
+/* Feature: Concurrent downloads */
+"max_concurrent" = "Descargas simultáneas máximas";
+
+/* Feature: Video trimming */
+"trim_video" = "Recortar video";
+"trim_start_placeholder" = "Inicio (00:00:00)";
+"trim_end_placeholder" = "Fin (00:00:00)";
+
+/* Feature: Format conversion */
+"convert_format" = "Convertir a formato";
+"convert_no_conversion" = "Sin conversión";
+
+/* Feature: Quick Look */
+"quick_look" = "Quick Look";
+
+/* Feature: Integrity verification */
+"verify_integrity" = "Verificar integridad del archivo al descargar";
+"integrity_ok" = "Integridad correcta";
+"integrity_corrupt" = "El archivo puede estar corrupto";
+
+/* Staged URL input */
+"url_placeholder" = "Pegá o escribí una URL...";
+"sidebar_urls_label" = "URLs";
+"staged_settings_title" = "Configuración del video";
+"sidebar_start" = "Iniciar";

@@ -71,6 +71,18 @@ Requires macOS 13 Ventura or later.
 
 ---
 
+## Building from Source
+
+```bash
+git clone https://github.com/charlysole/video-grabber.git
+cd "video-grabber/Video grabber"
+open "Video grabber.xcodeproj"
+```
+
+Build and run with Xcode 15 or later. No additional setup needed — dependencies are managed at runtime.
+
+---
+
 ## Localization
 
 - English (default)

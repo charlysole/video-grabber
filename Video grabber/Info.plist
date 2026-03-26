@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Download with Video Grabber</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>downloadURL</string>
+			<key>NSPortName</key>
+			<string>Video Grabber</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSStringPboardType</string>
+				<string>public.url</string>
+				<string>public.plain-text</string>
+			</array>
+			<key>NSUserData</key>
+			<string>downloadURL</string>
+		</dict>
+	</array>
+</dict>
+</plist>
