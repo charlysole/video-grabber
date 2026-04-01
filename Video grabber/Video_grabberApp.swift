@@ -6,6 +6,7 @@ import Combine
 import Darwin
 import UserNotifications
 import Quartz
+import WebKit
 
 // MARK: - AppDelegate (macOS Service)
 
@@ -91,7 +92,7 @@ struct AppShellView: View {
                 UpdateChecker.shared.checkSilently()
             }
             .sheet(isPresented: $vm.showWelcomeModal) {
-                WelcomeView(isPresented: $vm.showWelcomeModal)
+                WelcomeView(vm: vm, isPresented: $vm.showWelcomeModal)
             }
     }
 }
@@ -99,10 +100,33 @@ struct AppShellView: View {
 // MARK: - Welcome
 
 struct WelcomeView: View {
+    @ObservedObject var vm: DownloaderViewModel
     @Binding var isPresented: Bool
     @AppStorage("hideWelcomeModal") private var hideWelcomeModal = false
     @State private var dontShowAgain = false
     @Environment(\.openSettings) private var openSettings
+
+    private var ytDlpState: DependencyInstallState {
+        vm.dependencyInstallStates[.ytDlp] ?? DependencyInstallState()
+    }
+
+    private var denoInAppSupport: Bool {
+        let path = (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("VideoGrabber/deno").path) ?? ""
+        return FileManager.default.fileExists(atPath: path)
+    }
+
+    private var needsYtDlpUpdate: Bool {
+        // Deno not present → user has never run our update, definitely needs it
+        if !denoInAppSupport { return true }
+        // Version comparison when available
+        if let latest = ytDlpState.latestVersion,
+           let installed = ytDlpState.installedVersion,
+           !latest.isEmpty, !installed.isEmpty {
+            return installed != latest
+        }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -128,6 +152,33 @@ struct WelcomeView: View {
             }
             .font(.body)
 
+            if needsYtDlpUpdate {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(NSLocalizedString("welcome_ytdlp_update_title", comment: "Welcome: yt-dlp update needed title"))
+                            .font(.callout.bold())
+                        Text(NSLocalizedString("welcome_ytdlp_update_body", comment: "Welcome: yt-dlp update needed body"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if ytDlpState.isInstalling {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(NSLocalizedString("dep_update_btn", comment: "Button: update dependency")) {
+                            vm.installDependency(.ytDlp)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
             Toggle(NSLocalizedString("welcome_dont_show_again", comment: "Toggle: don't show again"), isOn: $dontShowAgain)
 
             HStack {
@@ -148,7 +199,7 @@ struct WelcomeView: View {
             }
         }
         .padding(24)
-        .frame(width: 560)
+        .frame(width: 580)
     }
 }
 
@@ -250,7 +301,8 @@ struct DownloadJob: Identifiable, Equatable {
 struct DependencyStatus {
     var ytDlpPath: String?
     var ffmpegPath: String?
-    var handBrakeInstalled: Bool
+    var nodePath: String?   // node.js — used as JS runtime for yt-dlp n-challenge
+    var denoPath: String?   // deno — preferred JS runtime for yt-dlp n-challenge
 
     var hasCoreTools: Bool {
         ytDlpPath != nil && ffmpegPath != nil
@@ -260,7 +312,6 @@ struct DependencyStatus {
 enum DependencyKind: String, CaseIterable, Identifiable {
     case ytDlp
     case ffmpeg
-    case handBrake
 
     var id: String { rawValue }
 
@@ -268,11 +319,10 @@ enum DependencyKind: String, CaseIterable, Identifiable {
         switch self {
         case .ytDlp: return "yt-dlp"
         case .ffmpeg: return "ffmpeg"
-        case .handBrake: return NSLocalizedString("dep_handbrake_title", comment: "HandBrake dependency name with optional label")
         }
     }
 
-    var supportsUpdate: Bool { false }
+    var supportsUpdate: Bool { self == .ytDlp }
 }
 
 struct DependencyInstallState {
@@ -390,6 +440,45 @@ struct StagedURL: Identifiable, Equatable {
     var isEditing: Bool = false
 }
 
+// MARK: - Browser Coordinator
+
+/// Avoids WKUserContentController → handler retain cycle.
+private final class WeakScriptHandler: NSObject, WKScriptMessageHandler {
+    weak var vm: DownloaderViewModel?
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let vm, message.name == "m3u8Capture",
+              let urlString = message.body as? String,
+              !urlString.isEmpty else { return }
+        DispatchQueue.main.async {
+            if !vm.capturedM3U8URLs.contains(urlString) {
+                vm.capturedM3U8URLs.append(urlString)
+            }
+        }
+    }
+}
+
+final class BrowserCoordinator: NSObject, WKNavigationDelegate {
+    weak var vm: DownloaderViewModel?
+    var onURLChange: ((String) -> Void)?
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        DispatchQueue.main.async { self.vm?.capturedM3U8URLs = [] }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        vm?.exportCookiesToFile()
+        if let url = webView.url?.absoluteString {
+            DispatchQueue.main.async { self.onURLChange?(url) }
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if let url = webView.url?.absoluteString {
+            DispatchQueue.main.async { self.onURLChange?(url) }
+        }
+    }
+}
+
 // MARK: - View Model
 
 @MainActor
@@ -417,7 +506,7 @@ final class DownloaderViewModel: ObservableObject {
     @Published var dependencyState = "Verificando dependencias..."
     @Published var showWelcomeModal = false
     @Published var history: [DownloadHistoryItem] = []
-    @Published var captureM3U8Instructions = false
+    @Published var capturedM3U8URLs: [String] = []
     @Published var dependencyInstallStates: [DependencyKind: DependencyInstallState] = [:]
 
     // Quality picker
@@ -430,6 +519,13 @@ final class DownloaderViewModel: ObservableObject {
     @Published var playlistEntries: [PlaylistEntry] = []
     @Published var isFetchingPlaylist: Bool = false
     @Published var showPlaylistSheet: Bool = false
+
+    // Page scan
+    @Published var showPageScanSheet: Bool = false
+    @Published var pageScanSourceURL: String = ""
+    @Published var pageScanEntries: [PlaylistEntry] = []
+    @Published var isScanningPage: Bool = false
+    @Published var pageScanError: String? = nil
 
     // Scheduler
     @Published var schedulerJobID: UUID? = nil
@@ -446,9 +542,19 @@ final class DownloaderViewModel: ObservableObject {
     @Published var verifyIntegrity: Bool = false
     @Published var quickLookURL: URL? = nil
 
+    // Browser + cookies
+    let persistentWebView: WKWebView
+    let browserCoordinator: BrowserCoordinator
+    @Published var useBrowserCookies: Bool = UserDefaults.standard.bool(forKey: "useBrowserCookies") {
+        didSet { UserDefaults.standard.set(useBrowserCookies, forKey: "useBrowserCookies") }
+    }
+    @Published var browserCookieCount: Int = 0
+    var cookiesFilePath: String? = nil
+
     private var runningProcesses: [UUID: Process] = [:]
     private let historyURL: URL
     private var schedulerTimers: [UUID: Timer] = [:]
+    private var cachedDependencies: DependencyStatus? = nil
 
     // Computed backward-compat helper
     var isRunning: Bool { runningCount > 0 }
@@ -458,6 +564,41 @@ final class DownloaderViewModel: ObservableObject {
             .appendingPathComponent("VideoGrabber", isDirectory: true)
         try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
         self.historyURL = appSupport.appendingPathComponent("download-history.json")
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = WKWebsiteDataStore.default()
+
+        let m3u8Script = """
+(function() {
+    if (window.__m3u8Hooked) return;
+    window.__m3u8Hooked = true;
+    function report(url) {
+        try { window.webkit.messageHandlers.m3u8Capture.postMessage(String(url)); } catch(e) {}
+    }
+    var origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+        if (url && /\\.m3u8/i.test(String(url))) report(url);
+        return origOpen.apply(this, arguments);
+    };
+    if (window.fetch) {
+        var origFetch = window.fetch;
+        window.fetch = function(input, init) {
+            var url = typeof input === 'string' ? input : (input && input.url) || '';
+            if (/\\.m3u8/i.test(url)) report(url);
+            return origFetch.apply(this, arguments);
+        };
+    }
+})();
+"""
+        let userScript = WKUserScript(source: m3u8Script, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        config.userContentController.addUserScript(userScript)
+        let m3u8Handler = WeakScriptHandler()
+        config.userContentController.add(m3u8Handler, name: "m3u8Capture")
+
+        self.persistentWebView = WKWebView(frame: .zero, configuration: config)
+        self.browserCoordinator = BrowserCoordinator()
+        self.persistentWebView.navigationDelegate = self.browserCoordinator
+        self.browserCoordinator.vm = self
+        m3u8Handler.vm = self
         loadHistory()
 
         let downloadsURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
@@ -584,12 +725,12 @@ final class DownloaderViewModel: ObservableObject {
     }
 
     func refreshDependencyState() {
+        invalidateDependencyCache()
         let deps = detectDependencies()
 
         dependencyState = [
             deps.ytDlpPath != nil ? "yt-dlp ✓" : "yt-dlp ✗",
-            deps.ffmpegPath != nil ? "ffmpeg ✓" : "ffmpeg ✗",
-            deps.handBrakeInstalled ? "HandBrake ✓" : "HandBrake opcional ✗"
+            deps.ffmpegPath != nil ? "ffmpeg ✓" : "ffmpeg ✗"
         ].joined(separator: "   ·   ")
 
         preserveInstallFlagsAndUpdateStates(with: deps)
@@ -616,6 +757,7 @@ final class DownloaderViewModel: ObservableObject {
                 } catch { version = "" }
                 DispatchQueue.main.async {
                     self?.dependencyInstallStates[.ytDlp]?.installedVersion = version
+                    self?.fetchLatestYtDlpVersion()
                 }
             }
         }
@@ -643,6 +785,19 @@ final class DownloaderViewModel: ObservableObject {
         }
     }
 
+    private func fetchLatestYtDlpVersion() {
+        let url = URL(string: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")!
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self,
+                  let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tag = json["tag_name"] as? String else { return }
+            DispatchQueue.main.async {
+                self.dependencyInstallStates[.ytDlp]?.latestVersion = tag
+            }
+        }.resume()
+    }
+
     private func preserveInstallFlagsAndUpdateStates(with deps: DependencyStatus) {
         let old = dependencyInstallStates
 
@@ -661,18 +816,11 @@ final class DownloaderViewModel: ObservableObject {
             statusText: deps.ffmpegPath != nil ? "Instalado" : ((old[.ffmpeg]?.statusText.isEmpty == false) ? old[.ffmpeg]!.statusText : "No instalado"),
             log: old[.ffmpeg]?.log ?? ""
         )
-
-        dependencyInstallStates[.handBrake] = DependencyInstallState(
-            isInstalled: deps.handBrakeInstalled,
-            resolvedPath: deps.handBrakeInstalled ? "/Applications/HandBrake.app" : nil,
-            isInstalling: old[.handBrake]?.isInstalling ?? false,
-            statusText: deps.handBrakeInstalled ? "Instalado" : ((old[.handBrake]?.statusText.isEmpty == false) ? old[.handBrake]!.statusText : "No instalado"),
-            log: old[.handBrake]?.log ?? ""
-        )
     }
 
     func detectDependencies() -> DependencyStatus {
-        DependencyStatus(
+        if let cached = cachedDependencies { return cached }
+        let result = DependencyStatus(
             ytDlpPath: binaryPath(candidates: [
                 appSupportBinaryPath(name: "yt-dlp"),
                 bundledBinaryPath(name: "yt-dlp"),
@@ -685,8 +833,36 @@ final class DownloaderViewModel: ObservableObject {
                 "/opt/homebrew/bin/ffmpeg",
                 "/usr/local/bin/ffmpeg"
             ]) ?? shellWhich("ffmpeg"),
-            handBrakeInstalled: FileManager.default.fileExists(atPath: "/Applications/HandBrake.app")
+            nodePath: binaryPath(candidates: [
+                "/opt/homebrew/bin/node",
+                "/usr/local/bin/node",
+                "/usr/bin/node"
+            ]) ?? findNvmNode() ?? shellWhich("node"),
+            denoPath: binaryPath(candidates: [
+                appSupportBinaryPath(name: "deno"),
+                "/opt/homebrew/bin/deno",
+                "/usr/local/bin/deno"
+            ]) ?? shellWhich("deno")
         )
+        cachedDependencies = result
+        return result
+    }
+
+    func invalidateDependencyCache() {
+        cachedDependencies = nil
+    }
+
+    private func findNvmNode() -> String? {
+        let nvmDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".nvm/versions/node")
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: nvmDir, includingPropertiesForKeys: [.isDirectoryKey]) else { return nil }
+        // Pick the highest version directory
+        let sorted = entries
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+        return sorted.first.map { $0.appendingPathComponent("bin/node").path }
+            .flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
     }
 
     private func bundledBinaryPath(name: String) -> String {
@@ -702,21 +878,158 @@ final class DownloaderViewModel: ObservableObject {
     func installDependency(_ kind: DependencyKind) {
         guard dependencyInstallStates[kind]?.isInstalling != true else { return }
         switch kind {
-        case .ytDlp, .ffmpeg: break  // bundled with app, updated via app update
-        case .handBrake: installHandBrake()
+        case .ytDlp: downloadLatestYtDlp()
+        case .ffmpeg: break
         }
     }
 
-    private func installHandBrake() {
-        updateDependencyState(
-            .handBrake,
-            isInstalling: false,
-            status: "Instalación manual",
-            appendLog: "HandBrake no se instala desde brew en esta app.\nAbrí su sitio oficial o copiá la app a /Applications.\n"
-        )
-        if let url = URL(string: "https://handbrake.fr/downloads.php") {
-            NSWorkspace.shared.open(url)
-        }
+    private func downloadLatestYtDlp() {
+        updateDependencyState(.ytDlp, isInstalling: true, status: "Verificando última versión...")
+
+        let apiURL = URL(string: "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest")!
+        URLSession.shared.dataTask(with: apiURL) { [weak self] data, _, error in
+            guard let self else { return }
+            guard let data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let assets = json["assets"] as? [[String: Any]],
+                  let asset = assets.first(where: { ($0["name"] as? String) == "yt-dlp_macos" }),
+                  let downloadURLString = asset["browser_download_url"] as? String,
+                  let downloadURL = URL(string: downloadURLString) else {
+                DispatchQueue.main.async {
+                    self.updateDependencyState(.ytDlp, isInstalling: false, status: "Error al obtener la versión más reciente.")
+                }
+                return
+            }
+
+            let tagName = json["tag_name"] as? String ?? ""
+            DispatchQueue.main.async {
+                self.updateDependencyState(.ytDlp, status: "Descargando \(tagName)...")
+            }
+
+            URLSession.shared.downloadTask(with: downloadURL) { [weak self] tmpURL, _, dlError in
+                guard let self else { return }
+                guard let tmpURL, dlError == nil else {
+                    DispatchQueue.main.async {
+                        self.updateDependencyState(.ytDlp, isInstalling: false, status: "Error al descargar yt-dlp.")
+                    }
+                    return
+                }
+
+                let destURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                    .appendingPathComponent("VideoGrabber/yt-dlp")
+
+                do {
+                    try FileManager.default.createDirectory(
+                        at: destURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true)
+                    if FileManager.default.fileExists(atPath: destURL.path) {
+                        try FileManager.default.removeItem(at: destURL)
+                    }
+                    try FileManager.default.moveItem(at: tmpURL, to: destURL)
+
+                    let chmod = Process()
+                    chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+                    chmod.arguments = ["+x", destURL.path]
+                    chmod.standardOutput = Pipe(); chmod.standardError = Pipe()
+                    try chmod.run(); chmod.waitUntilExit()
+
+                    let xattr = Process()
+                    xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+                    xattr.arguments = ["-d", "com.apple.quarantine", destURL.path]
+                    xattr.standardOutput = Pipe(); xattr.standardError = Pipe()
+                    try? xattr.run(); xattr.waitUntilExit()
+
+                    DispatchQueue.main.async {
+                        self.invalidateDependencyCache()
+                        self.refreshDependencyState()
+                        self.updateDependencyState(.ytDlp, isInstalling: false,
+                            status: "Actualizado a \(tagName). Descargando deno (runtime JS)...")
+                        self.downloadDeno(ytDlpTag: tagName)
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.updateDependencyState(.ytDlp, isInstalling: false,
+                            status: "Error al instalar: \(error.localizedDescription)")
+                    }
+                }
+            }.resume()
+        }.resume()
+    }
+
+    private func downloadDeno(ytDlpTag: String) {
+        #if arch(arm64)
+        let assetName = "deno-aarch64-apple-darwin.zip"
+        #else
+        let assetName = "deno-x86_64-apple-darwin.zip"
+        #endif
+
+        let apiURL = URL(string: "https://api.github.com/repos/denoland/deno/releases/latest")!
+        URLSession.shared.dataTask(with: apiURL) { [weak self] data, _, error in
+            guard let self else { return }
+            guard let data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let assets = json["assets"] as? [[String: Any]],
+                  let asset = assets.first(where: { ($0["name"] as? String) == assetName }),
+                  let downloadURLString = asset["browser_download_url"] as? String,
+                  let downloadURL = URL(string: downloadURLString) else {
+                DispatchQueue.main.async {
+                    self.updateDependencyState(.ytDlp, status: "Actualizado a \(ytDlpTag). (deno no disponible)")
+                }
+                return
+            }
+
+            URLSession.shared.downloadTask(with: downloadURL) { [weak self] tmpZipURL, _, dlError in
+                guard let self else { return }
+                guard let tmpZipURL, dlError == nil else {
+                    DispatchQueue.main.async {
+                        self.updateDependencyState(.ytDlp, status: "Actualizado a \(ytDlpTag). (error descargando deno)")
+                    }
+                    return
+                }
+
+                let supportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                    .appendingPathComponent("VideoGrabber")
+                let destURL = supportDir.appendingPathComponent("deno")
+
+                do {
+                    // Unzip using ditto (built-in macOS tool)
+                    let unzip = Process()
+                    unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+                    unzip.arguments = ["-xk", tmpZipURL.path, supportDir.path]
+                    unzip.standardOutput = Pipe(); unzip.standardError = Pipe()
+                    try unzip.run(); unzip.waitUntilExit()
+
+                    guard FileManager.default.fileExists(atPath: destURL.path) else {
+                        DispatchQueue.main.async {
+                            self.updateDependencyState(.ytDlp, status: "Actualizado a \(ytDlpTag). (error extrayendo deno)")
+                        }
+                        return
+                    }
+
+                    let chmod = Process()
+                    chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+                    chmod.arguments = ["+x", destURL.path]
+                    chmod.standardOutput = Pipe(); chmod.standardError = Pipe()
+                    try chmod.run(); chmod.waitUntilExit()
+
+                    let xattr = Process()
+                    xattr.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
+                    xattr.arguments = ["-d", "com.apple.quarantine", destURL.path]
+                    xattr.standardOutput = Pipe(); xattr.standardError = Pipe()
+                    try? xattr.run(); xattr.waitUntilExit()
+
+                    DispatchQueue.main.async {
+                        self.invalidateDependencyCache()
+                        self.refreshDependencyState()
+                        self.updateDependencyState(.ytDlp, status: "Actualizado a \(ytDlpTag) + deno. YouTube listo.")
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.updateDependencyState(.ytDlp, status: "Actualizado a \(ytDlpTag). (error instalando deno: \(error.localizedDescription))")
+                    }
+                }
+            }.resume()
+        }.resume()
     }
 
     private func runInstaller(
@@ -802,7 +1115,6 @@ final class DownloaderViewModel: ObservableObject {
         switch kind {
         case .ytDlp: return deps.ytDlpPath != nil
         case .ffmpeg: return deps.ffmpegPath != nil
-        case .handBrake: return deps.handBrakeInstalled
         }
     }
 
@@ -1049,7 +1361,6 @@ final class DownloaderViewModel: ObservableObject {
             jobs[index].errorSummary = ""
             runningCount += 1
             updateDockTile()
-            fetchThumbnailAsync(jobID: jobs[index].id)
             run(jobIndex: index)
         }
         updateDockTile()
@@ -1071,6 +1382,28 @@ final class DownloaderViewModel: ObservableObject {
         runningCount = 0
         updateDockTile()
         runNextIfNeeded()
+    }
+
+    func stopAll() {
+        for proc in runningProcesses.values { proc.terminate() }
+        runningProcesses.removeAll()
+
+        for idx in jobs.indices {
+            switch jobs[idx].status {
+            case .running, .queued, .paused, .scheduled:
+                schedulerTimers[jobs[idx].id]?.invalidate()
+                schedulerTimers.removeValue(forKey: jobs[idx].id)
+                jobs[idx].status = .cancelled
+                jobs[idx].progressLine = "Cancelado por el usuario"
+                jobs[idx].progressPercent = jobs[idx].progressPercent ?? 0
+                jobs[idx].processPID = nil
+            default:
+                break
+            }
+        }
+
+        runningCount = 0
+        updateDockTile()
     }
 
     func cancelJob(jobID: UUID) {
@@ -1173,16 +1506,6 @@ final class DownloaderViewModel: ObservableObject {
         NSWorkspace.shared.open(destinationFolder)
     }
 
-    func openHandBrake() {
-        let appURL = URL(fileURLWithPath: "/Applications/HandBrake.app")
-        guard FileManager.default.fileExists(atPath: appURL.path) else { return }
-        NSWorkspace.shared.openApplication(at: appURL, configuration: .init()) { _, _ in }
-    }
-
-    func openSafariM3U8Helper() {
-        captureM3U8Instructions = true
-    }
-
     // MARK: - iCloud Drive
 
     func openICloudDrive() {
@@ -1191,6 +1514,10 @@ final class DownloaderViewModel: ObservableObject {
         if FileManager.default.fileExists(atPath: iCloudURL.path) {
             NSWorkspace.shared.open(iCloudURL)
         }
+    }
+
+    func openGoogleDrive() {
+        NSWorkspace.shared.open(URL(string: "https://drive.google.com/drive/my-drive")!)
     }
 
     func setDestinationToICloud() {
@@ -1247,7 +1574,7 @@ final class DownloaderViewModel: ObservableObject {
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             let escaped = ytDlpPath.replacingOccurrences(of: "\"", with: "\\\"")
-            process.arguments = ["-lc", "\"\(escaped)\" -J --no-download '\(url)'"]
+            process.arguments = ["-c", "\"\(escaped)\" -J --no-download '\(url)'"]
             process.standardOutput = pipe
             process.standardError = Pipe()
             do {
@@ -1335,7 +1662,7 @@ final class DownloaderViewModel: ObservableObject {
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             let escaped = ytDlpPath.replacingOccurrences(of: "\"", with: "\\\"")
-            process.arguments = ["-lc", "\"\(escaped)\" -j --flat-playlist --no-warnings '\(url)'"]
+            process.arguments = ["-c", "\"\(escaped)\" -j --flat-playlist --no-warnings '\(url)'"]
             process.standardOutput = pipe
             process.standardError = Pipe()
             do {
@@ -1369,6 +1696,325 @@ final class DownloaderViewModel: ObservableObject {
             results.append(PlaylistEntry(id: vid, title: title, url: urlStr, thumbnailURL: thumb))
         }
         return results
+    }
+
+    // Parses yt-dlp -j output for page scan.
+    // Handles: JSONL (one object per line), playlist JSON {"_type":"playlist","entries":[...]},
+    // and prefers webpage_url over url for stable canonical URLs.
+    nonisolated private func parsePageScanEntries(from text: String, fallbackURL: String) -> [PlaylistEntry] {
+        var results: [PlaylistEntry] = []
+        let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        for (i, line) in lines.enumerated() {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+
+            // If yt-dlp returned a playlist-type object, recurse into its entries
+            if json["_type"] as? String == "playlist",
+               let entries = json["entries"] as? [[String: Any]] {
+                for (j, entry) in entries.enumerated() {
+                    let title = entry["title"] as? String ?? "Video \(results.count + 1)"
+                    let urlStr = entry["webpage_url"] as? String ?? entry["url"] as? String ?? fallbackURL
+                    guard !urlStr.isEmpty, urlStr != fallbackURL || entry["title"] != nil else { continue }
+                    let thumb = entry["thumbnail"] as? String
+                    let vid = entry["id"] as? String ?? "\(i)-\(j)"
+                    results.append(PlaylistEntry(id: vid, title: title, url: urlStr, thumbnailURL: thumb))
+                }
+                continue
+            }
+
+            // Single video JSON object
+            let title = json["title"] as? String ?? "Video \(results.count + 1)"
+            let urlStr = json["webpage_url"] as? String ?? json["url"] as? String ?? fallbackURL
+            guard !urlStr.isEmpty else { continue }
+            let thumb = json["thumbnail"] as? String
+            let vid = json["id"] as? String ?? "\(i)"
+            results.append(PlaylistEntry(id: vid, title: title, url: urlStr, thumbnailURL: thumb))
+        }
+        return results
+    }
+
+    func scanPageForVideos(url: String) {
+        guard !url.isEmpty, let ytDlpPath = detectDependencies().ytDlpPath else { return }
+        isScanningPage = true
+        pageScanEntries = []
+        pageScanSourceURL = url
+        pageScanError = nil
+        showPageScanSheet = true
+        let capturedCookieArgs = cookiesArgs()
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let process = Process()
+            let outPipe = Pipe()
+            let errPipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            let escapedPath = ytDlpPath.replacingOccurrences(of: "\"", with: "\\\"")
+            let cookieFlag = capturedCookieArgs.isEmpty ? "" :
+                " " + capturedCookieArgs.map { self.shellEscape($0) }.joined(separator: " ")
+            // Use shellEscape for URL to handle special characters safely
+            let escapedURL = self.shellEscape(url)
+            let command = "\"\(escapedPath)\" -j\(cookieFlag) \(escapedURL)"
+            process.arguments = ["-c", command]
+            process.standardOutput = outPipe
+            process.standardError = errPipe
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                let stdout = String(data: outData, encoding: .utf8) ?? ""
+                let stderr = String(data: errData, encoding: .utf8) ?? ""
+                let entries = self.parsePageScanEntries(from: stdout, fallbackURL: url)
+                DispatchQueue.main.async {
+                    self.pageScanEntries = entries
+                    self.isScanningPage = false
+                    if entries.isEmpty {
+                        // Surface the yt-dlp error so the user knows why it failed
+                        let detail = stderr
+                            .components(separatedBy: .newlines)
+                            .filter { $0.contains("ERROR") || $0.contains("WARNING") || $0.contains("Unsupported") }
+                            .prefix(3)
+                            .joined(separator: "\n")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if detail.isEmpty {
+                            self.pageScanError = NSLocalizedString("page_scan_no_videos", comment: "Page scan: no videos found")
+                        } else {
+                            self.pageScanError = detail
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isScanningPage = false
+                    self.pageScanError = NSLocalizedString("page_scan_error", comment: "Page scan: generic error")
+                }
+            }
+        }
+    }
+
+    // Browser-aware scan: first queries the rendered DOM via JS (catches JS-loaded videos),
+    // then runs yt-dlp for known-platform extraction. Results are merged.
+    func scanBrowserPage() {
+        guard let currentURL = persistentWebView.url,
+              currentURL.absoluteString != "about:blank",
+              !currentURL.absoluteString.isEmpty else { return }
+
+        let urlString = currentURL.absoluteString
+        isScanningPage = true
+        pageScanEntries = []
+        pageScanSourceURL = urlString
+        pageScanError = nil
+        showPageScanSheet = true
+        let capturedCookieArgs = cookiesArgs()
+
+        // Step 1: query the live DOM — finds <video>, <source>, and known video iframes
+        let js = """
+        (function() {
+            var items = [], seen = {};
+            var pageURL = window.location.href;
+
+            // Resolve relative URLs safely; returns null for empty/invalid
+            function resolve(href) {
+                if (!href) return null;
+                try { var u = new URL(href, document.baseURI).href;
+                      return (u === pageURL) ? null : u; }
+                catch(e) { return null; }
+            }
+
+            function add(url, title) {
+                if (!url || url.startsWith('blob:') || url.startsWith('data:') || seen[url]) return;
+                seen[url] = true;
+                items.push({ url: url, title: (title || document.title || 'Video').trim() });
+            }
+
+            // Walk up the DOM to find the nearest descriptive heading/title for an element
+            function nearbyTitle(el) {
+                var p = el.parentElement;
+                for (var i = 0; i < 5 && p; i++, p = p.parentElement) {
+                    var h = p.querySelector('h1,h2,h3,h4,[class*="title"i],[class*="heading"i]');
+                    if (h && h !== el && h.textContent.trim()) return h.textContent.trim().slice(0, 120);
+                }
+                return el.getAttribute('title') || el.getAttribute('aria-label') || document.title;
+            }
+
+            // HTML5 <video> elements
+            document.querySelectorAll('video').forEach(function(v) {
+                var title = nearbyTitle(v);
+                // currentSrc = actually playing URL; getAttribute avoids resolving empty src to page URL
+                var src = v.currentSrc || resolve(v.getAttribute('src'));
+                add(src, title);
+                v.querySelectorAll('source').forEach(function(s) {
+                    add(resolve(s.getAttribute('src')), title);
+                });
+                // Lazy-load data attributes used by video.js, JW Player, etc.
+                ['data-src','data-video-src','data-url','data-source','data-video-url','data-mp4','data-file'].forEach(function(a) {
+                    add(resolve(v.getAttribute(a)), title);
+                });
+            });
+
+            // <iframe> with known video platforms
+            document.querySelectorAll('iframe').forEach(function(f) {
+                var src = f.getAttribute('src') || '';
+                if (/youtube\\.com\\/embed|youtu\\.be|vimeo\\.com\\/video|dailymotion|twitch\\.tv|facebook\\.com\\/plugins\\/video|tiktok|streamable|wistia|brightcove|jwplatform|kaltura|cloudflare\\.com\\/stream/i.test(src)) {
+                    add(resolve(src) || src, nearbyTitle(f));
+                }
+            });
+
+            return JSON.stringify(items);
+        })()
+        """
+
+        persistentWebView.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self else { return }
+            var domEntries: [PlaylistEntry] = []
+            if let jsonStr = result as? String,
+               let data = jsonStr.data(using: .utf8),
+               let items = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                for (i, item) in items.enumerated() {
+                    guard let entryURL = item["url"] as? String, !entryURL.isEmpty else { continue }
+                    let title = item["title"] as? String ?? "Video \(i + 1)"
+                    domEntries.append(PlaylistEntry(id: "dom-\(i)", title: title, url: entryURL, thumbnailURL: nil))
+                }
+            }
+            // When multiple entries share the same title, differentiate them using the
+            // platform video ID (Vimeo, YouTube) or a numeric ordinal.
+            let titleCounts = Dictionary(grouping: domEntries, by: { $0.title }).mapValues { $0.count }
+            var titleOrdinal: [String: Int] = [:]
+            domEntries = domEntries.map { entry in
+                guard titleCounts[entry.title, default: 0] > 1 else { return entry }
+                titleOrdinal[entry.title, default: 0] += 1
+                let suffix = self.platformVideoLabel(from: entry.url) ?? "\(titleOrdinal[entry.title]!)"
+                return PlaylistEntry(id: entry.id, title: "\(entry.title) · \(suffix)", url: entry.url, thumbnailURL: nil)
+            }
+            if !domEntries.isEmpty {
+                self.pageScanEntries = domEntries
+            }
+
+            // Step 2: also try yt-dlp for known platforms (YouTube, Vimeo, etc.)
+            guard let ytDlpPath = self.detectDependencies().ytDlpPath else {
+                self.isScanningPage = false
+                if domEntries.isEmpty {
+                    self.pageScanError = NSLocalizedString("page_scan_no_videos", comment: "")
+                }
+                return
+            }
+
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else { return }
+                let process = Process()
+                let outPipe = Pipe(), errPipe = Pipe()
+                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                let escapedPath = ytDlpPath.replacingOccurrences(of: "\"", with: "\\\"")
+                let cookieFlag = capturedCookieArgs.isEmpty ? "" :
+                    " " + capturedCookieArgs.map { self.shellEscape($0) }.joined(separator: " ")
+                let command = "\"\(escapedPath)\" -j\(cookieFlag) \(self.shellEscape(urlString))"
+                process.arguments = ["-c", command]
+                process.standardOutput = outPipe
+                process.standardError = errPipe
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    let stdout = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                    let stderr = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                    let ytEntries = self.parsePageScanEntries(from: stdout, fallbackURL: urlString)
+                    DispatchQueue.main.async {
+                        let existingURLs = Set(self.pageScanEntries.map { $0.url })
+                        let newEntries = ytEntries.filter { !existingURLs.contains($0.url) }
+                        self.pageScanEntries.append(contentsOf: newEntries)
+                        self.isScanningPage = false
+                        if self.pageScanEntries.isEmpty {
+                            let errDetail = stderr
+                                .components(separatedBy: .newlines)
+                                .filter { $0.contains("ERROR") || $0.contains("Unsupported") }
+                                .prefix(2).joined(separator: "\n")
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            self.pageScanError = errDetail.isEmpty
+                                ? NSLocalizedString("page_scan_no_videos", comment: "")
+                                : errDetail
+                        }
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.isScanningPage = false
+                        if self.pageScanEntries.isEmpty {
+                            self.pageScanError = NSLocalizedString("page_scan_error", comment: "")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func addSelectedPageVideosToStaged() {
+        let selected = pageScanEntries.filter(\.selected)
+        for entry in selected {
+            stagedURLs.append(StagedURL(urlString: entry.url))
+        }
+        pageScanEntries = []
+        pageScanSourceURL = ""
+        showPageScanSheet = false
+    }
+
+    // MARK: - Browser cookies
+
+    func exportCookiesToFile() {
+        persistentWebView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            guard let self else { return }
+            let count = cookies.count
+            guard count > 0 else {
+                self.browserCookieCount = 0
+                return
+            }
+            var lines = ["# Netscape HTTP Cookie File", "# Generated by Video Grabber"]
+            for cookie in cookies {
+                let domain = cookie.domain
+                let subdomains = domain.hasPrefix(".") ? "TRUE" : "FALSE"
+                let secure = cookie.isSecure ? "TRUE" : "FALSE"
+                let expiry = cookie.expiresDate.map { String(Int($0.timeIntervalSince1970)) } ?? "0"
+                lines.append("\(domain)\t\(subdomains)\t\(cookie.path)\t\(secure)\t\(expiry)\t\(cookie.name)\t\(cookie.value)")
+            }
+            let content = lines.joined(separator: "\n")
+            let fileURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("VideoGrabber/cookies.txt")
+            if (try? content.write(to: fileURL, atomically: true, encoding: .utf8)) != nil {
+                self.cookiesFilePath = fileURL.path
+            }
+            self.browserCookieCount = count
+        }
+    }
+
+    // Returns a short human-readable label from a known-platform embed URL, e.g. "Vimeo 924759435"
+    nonisolated private func platformVideoLabel(from urlString: String) -> String? {
+        guard let url = URL(string: urlString) else { return nil }
+        let host = url.host?.lowercased() ?? ""
+        let parts = url.pathComponents.filter { $0 != "/" }
+        if host.contains("vimeo") {
+            if let idx = parts.firstIndex(of: "video"), idx + 1 < parts.count {
+                return "Vimeo \(parts[idx + 1])"
+            }
+            if let last = parts.last, !last.isEmpty { return "Vimeo \(last)" }
+        }
+        if host.contains("youtube") || host.contains("youtu.be") {
+            if let idx = parts.firstIndex(of: "embed"), idx + 1 < parts.count {
+                return "YT \(parts[idx + 1])"
+            }
+            if let components = URLComponents(string: urlString),
+               let v = components.queryItems?.first(where: { $0.name == "v" })?.value {
+                return "YT \(v)"
+            }
+            if let last = parts.last, !last.isEmpty { return "YT \(last)" }
+        }
+        if host.contains("dailymotion") {
+            if let last = parts.last(where: { $0 != "/" }) { return "DM \(last)" }
+        }
+        return nil
+    }
+
+    func cookiesArgs() -> [String] {
+        guard useBrowserCookies,
+              let path = cookiesFilePath,
+              FileManager.default.fileExists(atPath: path) else { return [] }
+        return ["--cookies", path]
     }
 
     func enqueueSelectedPlaylistEntries(preset: DownloadPreset) {
@@ -1528,7 +2174,23 @@ final class DownloaderViewModel: ObservableObject {
             ytArgs += ["--download-sections", "*\(start)-\(end)", "--force-keyframes-at-cuts"]
         }
 
+        // Cookies from in-app browser
+        ytArgs += cookiesArgs()
+
+        // YouTube: pass a JS runtime so yt-dlp can solve the n-challenge (prefer deno, fall back to node)
+        let urlLower = job.sourceURL.lowercased()
+        if urlLower.contains("youtube.com") || urlLower.contains("youtu.be") {
+            if let denoPath = deps.denoPath {
+                ytArgs += ["--js-runtimes", "deno:\(denoPath)"]
+            } else if let nodePath = deps.nodePath {
+                ytArgs += ["--js-runtimes", "node:\(nodePath)"]
+            }
+        }
+
+        // --print implies --quiet in yt-dlp; override so extraction-phase messages still reach us
+        ytArgs += ["--no-quiet"]
         ytArgs += ["--print", "MEDIAINFO:%(resolution)s|%(abr)s"]
+        ytArgs += ["--print", "THUMBNAIL:%(thumbnail)s"]
 
         // Tell yt-dlp exactly where ffmpeg is so it doesn't rely on PATH
         if let ffmpegPath = deps.ffmpegPath {
@@ -1550,7 +2212,7 @@ final class DownloaderViewModel: ObservableObject {
         let escapedPath = ytDlpPath.replacingOccurrences(of: "\"", with: "\\\"")
         let command = "\"\(escapedPath)\" " + ytArgs.map { shellEscape($0) }.joined(separator: " ")
 
-        process.arguments = ["-lc", command]
+        process.arguments = ["-c", command]
         process.standardOutput = outPipe
         process.standardError = errPipe
         runningProcesses[job.id] = process
@@ -1614,6 +2276,8 @@ final class DownloaderViewModel: ObservableObject {
         "Error running deno process",
         "found O n function possibilities",
         "[Om [1m [31merror[Om",
+        "MEDIAINFO:",
+        "THUMBNAIL:",
     ]
 
     private func appendLog(_ text: String, to jobIndex: Int) {
@@ -1700,6 +2364,13 @@ final class DownloaderViewModel: ObservableObject {
                 jobs[jobIndex].mediaInfo = formatted
             }
         }
+
+        if trimmed.hasPrefix("THUMBNAIL:") {
+            let thumb = String(trimmed.dropFirst("THUMBNAIL:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !thumb.isEmpty && thumb != "NA" && thumb != "None" {
+                jobs[jobIndex].thumbnailURL = thumb
+            }
+        }
     }
 
     private func parseDestination(_ line: String, jobIndex: Int) {
@@ -1758,7 +2429,7 @@ final class DownloaderViewModel: ObservableObject {
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             let escaped = ytDlpPath.replacingOccurrences(of: "\"", with: "\\\"")
-            process.arguments = ["-lc", "\"\(escaped)\" -J --no-download '\(url)'"]
+            process.arguments = ["-c", "\"\(escaped)\" -J --no-download '\(url)'"]
             process.standardOutput = pipe
             process.standardError = Pipe()
             do {
@@ -1832,11 +2503,20 @@ final class DownloaderViewModel: ObservableObject {
         if lower.contains("unsupported url") || lower.contains("unsupported") || lower.contains("no suitable extractor") {
             return "La URL no está soportada por yt-dlp."
         }
-        if lower.contains("private video") || lower.contains("video unavailable") || lower.contains("sign in") || lower.contains("members-only") || lower.contains("forbidden") || lower.contains("403") {
+        if lower.contains("confirm you") && lower.contains("bot") {
+            return "YouTube requiere verificación. Ve al tab Browser, inicia sesión en youtube.com y activa 'Usar cookies en descargas'."
+        }
+        if lower.contains("429") || lower.contains("too many requests") {
+            return "YouTube bloqueó la descarga por demasiadas solicitudes. Espera unos minutos o inicia sesión en el Browser y activa 'Usar cookies'."
+        }
+        if lower.contains("private video") || lower.contains("video unavailable") || (lower.contains("sign in") && !lower.contains("bot")) || lower.contains("members-only") || lower.contains("forbidden") || lower.contains("403") {
             return "El video es privado, restringido o requiere acceso."
         }
         if lower.contains("unable to download webpage") || lower.contains("network is unreachable") || lower.contains("timed out") || lower.contains("temporary failure") || lower.contains("connection") {
             return "Hubo un fallo de red al intentar descargar."
+        }
+        if lower.contains("binarycookies") || (lower.contains("cookies") && lower.contains("operation not permitted")) {
+            return "No se puede acceder a las cookies del navegador. Safari no está soportado por el sandbox de macOS. Selecciona Chrome, Firefox u otro navegador en el selector de cookies."
         }
         if lower.contains("permission denied") || lower.contains("operation not permitted") || lower.contains("no hay permisos") || lower.contains("read-only") {
             return "Hay un problema de permisos de carpeta o del sistema."
@@ -1961,7 +2641,7 @@ final class DownloaderViewModel: ObservableObject {
             func zsh(_ command: String, stderrHandler: ((String) -> Void)? = nil) -> (status: Int32, output: String) {
                 let proc = Process()
                 proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                proc.arguments = ["-lc", command]
+                proc.arguments = ["-c", command]
                 let outPipe = Pipe()
                 let errPipe = Pipe()
                 proc.standardOutput = outPipe
@@ -2143,7 +2823,7 @@ final class DownloaderViewModel: ObservableObject {
             let proc = Process()
             let pipe = Pipe()
             proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            proc.arguments = ["-lc", "\(escapedYtDlp) --print duration \(escaped) 2>/dev/null"]
+            proc.arguments = ["-c", "\(escapedYtDlp) --print duration \(escaped) 2>/dev/null"]
             proc.standardOutput = pipe
             proc.standardError = Pipe()
             try? proc.run()
@@ -2342,7 +3022,7 @@ final class DownloaderViewModel: ObservableObject {
             guard let self else { return }
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            proc.arguments = ["-lc", cmd]
+            proc.arguments = ["-c", cmd]
             let outPipe = Pipe()
             proc.standardOutput = outPipe
             proc.standardError = Pipe()
@@ -2524,7 +3204,6 @@ struct PreferencesView: View {
                 VStack(spacing: 14) {
                     DependencyInstallRow(vm: vm, kind: .ytDlp)
                     DependencyInstallRow(vm: vm, kind: .ffmpeg)
-                    DependencyInstallRow(vm: vm, kind: .handBrake)
                 }
                 .padding(.vertical, 8)
             }
@@ -2555,20 +3234,24 @@ struct DependencyInstallRow: View {
     }
 
     private var canInstall: Bool {
-        switch kind {
-        case .ytDlp, .ffmpeg: return false
-        case .handBrake: return !state.isInstalled && !state.isInstalling
+        guard kind == .ytDlp, !state.isInstalling else { return false }
+        if !state.isInstalled { return true }
+        // If latest version is known and matches installed, already up to date
+        if let latest = state.latestVersion, let installed = state.installedVersion,
+           !latest.isEmpty, !installed.isEmpty {
+            return installed != latest
         }
+        return true
     }
 
     private var actionButtonLabel: String {
-        switch kind {
-        case .handBrake:
-            return state.isInstalled
-                ? NSLocalizedString("dep_installed", comment: "Dependency status: installed")
-                : NSLocalizedString("dep_install_btn", comment: "Button: install dependency")
-        default: return ""
+        guard kind == .ytDlp else { return "" }
+        if !state.isInstalled { return NSLocalizedString("dep_install_btn", comment: "Button: install dependency") }
+        if let latest = state.latestVersion, let installed = state.installedVersion,
+           !latest.isEmpty, !installed.isEmpty, installed == latest {
+            return NSLocalizedString("dep_up_to_date", comment: "Button label: already on latest version")
         }
+        return NSLocalizedString("dep_update_btn", comment: "Button: update dependency")
     }
 
     private var versionLabel: String? {
@@ -2613,20 +3296,20 @@ struct DependencyInstallRow: View {
                 }
 
                 switch kind {
-                case .ytDlp, .ffmpeg:
-                    Text("Incluida en la app")
+                case .ytDlp:
+                    Button(actionButtonLabel) {
+                        vm.installDependency(kind)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canInstall)
+                case .ffmpeg:
+                    Text(NSLocalizedString("dep_bundled", comment: "Label: dependency is bundled with app"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color(NSColor.controlBackgroundColor))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                case .handBrake:
-                    Button(actionButtonLabel) {
-                        vm.installDependency(kind)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canInstall)
                 }
             }
 
@@ -2946,6 +3629,327 @@ struct PlaylistPickerSheet: View {
     }
 }
 
+// MARK: - Page Scan Sheet
+
+struct PageScanSheet: View {
+    @ObservedObject var vm: DownloaderViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(NSLocalizedString("page_scan_title", comment: "Page scan sheet title"))
+                        .font(.title2.bold())
+                    if !vm.pageScanSourceURL.isEmpty {
+                        Text(vm.pageScanSourceURL)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                Spacer()
+                if !vm.pageScanEntries.isEmpty {
+                    Text(String(format: NSLocalizedString("page_scan_selected_count", comment: "Page scan: X/Y selected"), vm.pageScanEntries.filter(\.selected).count, vm.pageScanEntries.count))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(20)
+
+            Divider()
+
+            if vm.isScanningPage {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(NSLocalizedString("page_scan_scanning", comment: "Page scan: scanning in progress"))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+                Spacer()
+            } else if let error = vm.pageScanError {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                        Text(NSLocalizedString("page_scan_no_videos", comment: "Page scan: no videos found"))
+                            .fontWeight(.medium)
+                    }
+                    ScrollView {
+                        Text(error)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 120)
+                    .padding(8)
+                    .background(.quaternary)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(20)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(vm.pageScanEntries.indices, id: \.self) { i in
+                            HStack(spacing: 12) {
+                                Toggle("", isOn: Binding(
+                                    get: { vm.pageScanEntries[i].selected },
+                                    set: { vm.pageScanEntries[i].selected = $0 }
+                                ))
+                                .labelsHidden()
+
+                                if let thumbURL = vm.pageScanEntries[i].thumbnailURL,
+                                   let url = URL(string: thumbURL) {
+                                    AsyncImage(url: url) { image in
+                                        image.resizable().aspectRatio(contentMode: .fill)
+                                    } placeholder: {
+                                        Rectangle().fill(Color.secondary.opacity(0.2))
+                                    }
+                                    .frame(width: 60, height: 34)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                } else {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.secondary.opacity(0.15))
+                                        .frame(width: 60, height: 34)
+                                        .overlay {
+                                            Image(systemName: "film")
+                                                .foregroundStyle(.secondary)
+                                                .font(.caption)
+                                        }
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(vm.pageScanEntries[i].title)
+                                        .lineLimit(2)
+                                    Text(vm.pageScanEntries[i].url)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            Divider().padding(.leading, 88)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack {
+                if !vm.pageScanEntries.isEmpty {
+                    Button(NSLocalizedString("playlist_select_all", comment: "Button: select all")) {
+                        for i in vm.pageScanEntries.indices { vm.pageScanEntries[i].selected = true }
+                    }
+                    Button(NSLocalizedString("playlist_deselect_all", comment: "Button: deselect all")) {
+                        for i in vm.pageScanEntries.indices { vm.pageScanEntries[i].selected = false }
+                    }
+                }
+                Spacer()
+                Button(NSLocalizedString("btn_cancel", comment: "Button: cancel")) {
+                    vm.pageScanEntries = []
+                    vm.pageScanSourceURL = ""
+                    vm.pageScanError = nil
+                    vm.showPageScanSheet = false
+                }
+                .buttonStyle(.bordered)
+                Button(NSLocalizedString("page_scan_add_selected", comment: "Button: add selected videos to staged")) {
+                    vm.addSelectedPageVideosToStaged()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(vm.pageScanEntries.filter(\.selected).isEmpty)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+        }
+        .frame(minWidth: 620, minHeight: 400)
+    }
+}
+
+// MARK: - Browser Tab
+
+struct BrowserWebView: NSViewRepresentable {
+    let webView: WKWebView
+    func makeNSView(context: Context) -> WKWebView { webView }
+    func updateNSView(_ nsView: WKWebView, context: Context) {}
+}
+
+struct BrowserTabView: View {
+    @ObservedObject var vm: DownloaderViewModel
+    @State private var addressBar: String = ""
+    @State private var isLoading: Bool = false
+    @State private var showM3U8Panel: Bool = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Navigation bar
+            HStack(spacing: 6) {
+                Button {
+                    vm.persistentWebView.goBack()
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(!vm.persistentWebView.canGoBack)
+                .buttonStyle(.plain)
+
+                Button {
+                    vm.persistentWebView.goForward()
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(!vm.persistentWebView.canGoForward)
+                .buttonStyle(.plain)
+
+                Button {
+                    if isLoading {
+                        vm.persistentWebView.stopLoading()
+                    } else {
+                        vm.persistentWebView.reload()
+                    }
+                } label: {
+                    Image(systemName: isLoading ? "xmark" : "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+
+                TextField(NSLocalizedString("browser_address_placeholder", comment: "Browser address bar placeholder"), text: $addressBar)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { navigate(to: addressBar) }
+
+                Button {
+                    vm.scanBrowserPage()
+                } label: {
+                    Image(systemName: "magnifyingglass.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(vm.persistentWebView.url != nil ? Color.accentColor : Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(vm.persistentWebView.url == nil || isLoading)
+                .help(NSLocalizedString("browser_scan_tooltip", comment: "Scan current page for downloadable videos"))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
+
+            if !vm.capturedM3U8URLs.isEmpty {
+                VStack(spacing: 0) {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Label("\(vm.capturedM3U8URLs.count) m3u8 \(vm.capturedM3U8URLs.count == 1 ? "stream" : "streams") detected", systemImage: "dot.radiowaves.left.and.right")
+                                .font(.caption.bold())
+                                .foregroundStyle(.orange)
+                            Spacer()
+                            Button {
+                                showM3U8Panel.toggle()
+                            } label: {
+                                Image(systemName: showM3U8Panel ? "chevron.up" : "chevron.down")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+
+                        if showM3U8Panel {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(vm.capturedM3U8URLs, id: \.self) { url in
+                                        HStack(spacing: 8) {
+                                            Text(url)
+                                                .font(.system(.caption2, design: .monospaced))
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                                .foregroundStyle(.secondary)
+                                            Spacer()
+                                            Button("Add") {
+                                                vm.newURLInput = url
+                                                vm.addStagedURL()
+                                            }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.mini)
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 2)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .frame(maxHeight: 120)
+                        }
+                    }
+                    .background(Color.orange.opacity(0.08))
+                }
+            }
+
+            if isLoading {
+                ProgressView(value: vm.persistentWebView.estimatedProgress)
+                    .progressViewStyle(.linear)
+                    .frame(height: 2)
+            }
+
+            Divider()
+
+            BrowserWebView(webView: vm.persistentWebView)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            // Cookie status bar
+            HStack(spacing: 12) {
+                if vm.browserCookieCount > 0 {
+                    Label(String(format: NSLocalizedString("browser_cookie_count", comment: "Cookie count label"), vm.browserCookieCount), systemImage: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle(NSLocalizedString("browser_use_cookies", comment: "Toggle: use cookies in downloads"), isOn: $vm.useBrowserCookies)
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
+                } else {
+                    Label(NSLocalizedString("browser_no_cookies", comment: "No cookies stored yet"), systemImage: "lock.open")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(NSLocalizedString("browser_login_hint", comment: "Browser login hint"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.bar)
+        }
+        .onAppear {
+            vm.browserCoordinator.onURLChange = { url in
+                DispatchQueue.main.async {
+                    addressBar = url
+                    isLoading = false
+                }
+            }
+            if addressBar.isEmpty, let currentURL = vm.persistentWebView.url?.absoluteString {
+                addressBar = currentURL
+            }
+        }
+    }
+
+    private func navigate(to urlString: String) {
+        var str = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !str.isEmpty else { return }
+        if !str.hasPrefix("http://") && !str.hasPrefix("https://") {
+            str = "https://" + str
+        }
+        guard let url = URL(string: str) else { return }
+        isLoading = true
+        addressBar = str
+        vm.persistentWebView.load(URLRequest(url: url))
+    }
+}
+
 // MARK: - Scheduler Sheet
 
 struct SchedulerSheet: View {
@@ -3022,9 +4026,6 @@ struct ContentView: View {
                 vm.destinationFolder = folder
             }
         }
-        .sheet(isPresented: $vm.captureM3U8Instructions) {
-            M3U8HelperView()
-        }
         .sheet(isPresented: Binding(
             get: { vm.qualityPickerJobID != nil },
             set: { if !$0 { vm.qualityPickerJobID = nil; vm.availableFormats = [] } }
@@ -3036,6 +4037,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $vm.showSchedulerSheet) {
             SchedulerSheet(vm: vm)
+        }
+        .sheet(isPresented: $vm.showPageScanSheet) {
+            PageScanSheet(vm: vm)
         }
         // Drag & Drop URLs onto the window
         .onDrop(of: [UTType.url, UTType.plainText], isTargeted: nil) { providers in
@@ -3108,6 +4112,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(vm.newURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .help(NSLocalizedString("add_url_tooltip", comment: "Button tooltip: add URL to staged list"))
                     }
 
                     if !vm.stagedURLs.isEmpty {
@@ -3148,9 +4153,21 @@ struct ContentView: View {
                         Button(NSLocalizedString("sidebar_open_folder", comment: "Button: open folder")) {
                             vm.openDestination()
                         }
-                        Button(NSLocalizedString("sidebar_icloud_drive", comment: "Button: set iCloud Drive as destination")) {
-                            vm.setDestinationToICloud()
+                        Menu {
+                            Button {
+                                vm.openICloudDrive()
+                            } label: {
+                                Label("iCloud Drive", systemImage: "icloud")
+                            }
+                            Button {
+                                vm.openGoogleDrive()
+                            } label: {
+                                Label("Google Drive", systemImage: "externaldrive.badge.wifi")
+                            }
+                        } label: {
+                            Image(systemName: "cloud")
                         }
+                        .help(NSLocalizedString("cloud_upload_menu_tooltip", comment: "Tooltip: upload to cloud storage"))
                     }
                 }
             }
@@ -3165,21 +4182,6 @@ struct ContentView: View {
             .controlSize(.large)
             .disabled(vm.stagedURLs.isEmpty)
 
-            Button(NSLocalizedString("sidebar_cancel_current", comment: "Button: cancel current download")) {
-                vm.cancelCurrent()
-            }
-            .disabled(!vm.isRunning)
-
-            HStack {
-                Button(NSLocalizedString("sidebar_capture_m3u8", comment: "Button: capture m3u8")) {
-                    vm.openSafariM3U8Helper()
-                }
-
-                Button(NSLocalizedString("sidebar_open_handbrake", comment: "Button: open HandBrake")) {
-                    vm.openHandBrake()
-                }
-            }
-
         }
         .padding(20)
         .navigationSplitViewColumnWidth(min: 320, ideal: 380)
@@ -3192,6 +4194,9 @@ struct ContentView: View {
 
             historyTab
                 .tabItem { Label(NSLocalizedString("tab_history", comment: "Tab: history"), systemImage: "clock.arrow.circlepath") }
+
+            BrowserTabView(vm: vm)
+                .tabItem { Label(NSLocalizedString("tab_browser", comment: "Tab: in-app browser"), systemImage: "globe") }
         }
     }
 
@@ -3205,11 +4210,19 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(NSLocalizedString("sidebar_clear", comment: "Button: clear finished downloads"), role: .destructive) {
-                    vm.clearDownloadedJobs()
+                HStack(spacing: 8) {
+                    Button(NSLocalizedString("btn_stop_all", comment: "Button: stop all downloads")) {
+                        vm.stopAll()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!vm.jobs.contains(where: { [.running, .queued, .paused, .scheduled].contains($0.status) }))
+
+                    Button(NSLocalizedString("sidebar_clear", comment: "Button: clear finished downloads"), role: .destructive) {
+                        vm.clearDownloadedJobs()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!vm.jobs.contains(where: { $0.status == .finished || $0.status == .cancelled || $0.status == .failed }))
                 }
-                .buttonStyle(.bordered)
-                .disabled(!vm.jobs.contains(where: { $0.status == .finished || $0.status == .cancelled || $0.status == .failed }))
             }
             .padding(20)
 
@@ -3299,6 +4312,41 @@ struct ContentView: View {
                     }
                 }
                 .width(min: 160, ideal: 230)
+
+                TableColumn("") { job in
+                    if ![DownloadJob.Status.finished, .failed, .cancelled].contains(job.status) {
+                        HStack(spacing: 6) {
+                            if job.status == .running {
+                                Button {
+                                    vm.pauseJob(jobID: job.id)
+                                } label: {
+                                    Image(systemName: "pause.fill")
+                                        .foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(NSLocalizedString("detail_pause", comment: "Button: pause download"))
+                            } else if job.status == .paused {
+                                Button {
+                                    vm.resumeJob(jobID: job.id)
+                                } label: {
+                                    Image(systemName: "play.fill")
+                                        .foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(NSLocalizedString("detail_resume", comment: "Button: resume download"))
+                            }
+                            Button {
+                                vm.cancelJob(jobID: job.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.red.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Stop")
+                        }
+                    }
+                }
+                .width(52)
             }
             .padding(.horizontal, 12)
             .onKeyPress(.space) {
@@ -3816,43 +4864,6 @@ struct IntTimeField: View {
     }
 }
 
-// MARK: - M3U8 Helper
-
-struct M3U8HelperView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(NSLocalizedString("m3u8_title", comment: "M3U8 helper title"))
-                .font(.title.bold())
-
-            Text(NSLocalizedString("m3u8_description", comment: "M3U8 helper description"))
-                .foregroundStyle(.secondary)
-
-            GroupBox(NSLocalizedString("m3u8_workflow_header", comment: "M3U8 recommended workflow header")) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(NSLocalizedString("m3u8_step_1", comment: "M3U8 step 1"))
-                    Text(NSLocalizedString("m3u8_step_2", comment: "M3U8 step 2"))
-                    Text(NSLocalizedString("m3u8_step_3", comment: "M3U8 step 3"))
-                    Text(NSLocalizedString("m3u8_step_4", comment: "M3U8 step 4"))
-                    Text(NSLocalizedString("m3u8_step_5", comment: "M3U8 step 5"))
-                }
-            }
-
-            GroupBox(NSLocalizedString("m3u8_future_header", comment: "M3U8 future evolution header")) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(NSLocalizedString("m3u8_future_1", comment: "M3U8 future item 1"))
-                    Text(NSLocalizedString("m3u8_future_2", comment: "M3U8 future item 2"))
-                    Text(NSLocalizedString("m3u8_future_3", comment: "M3U8 future item 3"))
-                }
-                .font(.callout)
-            }
-
-            Spacer()
-        }
-        .padding(24)
-        .frame(minWidth: 620, minHeight: 420)
-    }
-}
-
 private extension Int {
     var nonZero: Int? { self == 0 ? nil : self }
 }
@@ -3978,6 +4989,9 @@ final class UpdateChecker {
                 return
             }
 
+            // Strip quarantine so hdiutil can mount the downloaded DMG
+            _ = self.runShell("xattr -d com.apple.quarantine \"\(dmgDest.path)\"")
+
             // Mount the DMG
             guard self.runShell("hdiutil attach \"\(dmgDest.path)\" -nobrowse -quiet -mountpoint \"\(mountPoint)\"") == 0 else {
                 DispatchQueue.main.async { self.showInstallErrorAlert("Could not mount the update disk image.") }
@@ -4004,7 +5018,7 @@ final class UpdateChecker {
                 let escapedMount   = mountPoint.replacingOccurrences(of: "'", with: "'\\''")
                 let escapedAppName = appName.replacingOccurrences(of: "'", with: "'\\''")
                 let appleScript = """
-                do shell script "cp -Rf '\(escapedMount)/\(escapedAppName)' '/Applications/' && xattr -dr com.apple.quarantine '/Applications/\(escapedAppName)' && hdiutil detach '\(escapedMount)' -quiet" with administrator privileges
+                do shell script "rm -rf '/Applications/\(escapedAppName)' && ditto '\(escapedMount)/\(escapedAppName)' '/Applications/\(escapedAppName)' && xattr -dr com.apple.quarantine '/Applications/\(escapedAppName)' && hdiutil detach '\(escapedMount)' -quiet" with administrator privileges
                 """
 
                 DispatchQueue.global(qos: .userInitiated).async {

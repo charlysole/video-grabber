@@ -15,12 +15,14 @@
 "prefs_show_welcome_again" = "Volver a mostrar bienvenida";
 
 /* Dependency rows */
-"dep_handbrake_title" = "HandBrake (opcional)";
 "dep_not_installed_path" = "No instalado";
 "dep_installed" = "Instalado";
 "dep_not_installed" = "No instalado";
 "dep_install_btn" = "Instalar";
 "dep_update_btn" = "Actualizar";
+"dep_up_to_date" = "Al día ✓";
+"welcome_ytdlp_update_title" = "Acción requerida antes de descargar";
+"welcome_ytdlp_update_body" = "La librería yt-dlp incluida necesita actualizarse a su última versión. Sin esto, las descargas de YouTube y otras plataformas probablemente fallarán. Pulsa Actualizar — solo tarda un momento.";
 "dep_updating" = "Actualizando...";
 "dep_bundled" = "Incluido";
 
@@ -47,12 +49,10 @@
 "sidebar_choose_folder" = "Elegir carpeta";
 "sidebar_set_to_downloads" = "Volver a Descargas";
 "sidebar_open_folder" = "Abrir carpeta";
-"sidebar_icloud_drive" = "iCloud Drive";
 "sidebar_add_to_queue" = "Agregar a la cola";
-"sidebar_cancel_current" = "Cancelar actual";
+"cloud_upload_menu_tooltip" = "Subir a almacenamiento en la nube";
 "sidebar_clear" = "Limpiar";
-"sidebar_capture_m3u8" = "Capturar m3u8";
-"sidebar_open_handbrake" = "Abrir HandBrake";
+"btn_stop_all" = "Detener todo";
 
 /* Tabs */
 "tab_queue" = "Cola";
@@ -142,20 +142,6 @@
 /* Shared buttons */
 "btn_cancel" = "Cancelar";
 
-/* M3U8 helper */
-"m3u8_title" = "Capturar m3u8 desde navegador";
-"m3u8_description" = "Esta app no puede inspeccionar directamente las pestañas del navegador sin una extensión o componente nativo adicional. Por eso, este botón abre una guía integrada para capturarlo manualmente o en una siguiente fase conectarlo con una extensión de Safari/Chrome.";
-"m3u8_workflow_header" = "Flujo recomendado";
-"m3u8_step_1" = "1. Abrí la página del video en Chrome o Firefox.";
-"m3u8_step_2" = "2. Abrí Inspector / Network.";
-"m3u8_step_3" = "3. Recargá la página y filtrá por m3u8.";
-"m3u8_step_4" = "4. Copiá la URL encontrada.";
-"m3u8_step_5" = "5. Pegala en la app para descargarla como preset M3U8 / Streaming.";
-"m3u8_future_header" = "Siguiente evolución técnica";
-"m3u8_future_1" = "• Safari Web Extension que detecte requests .m3u8";
-"m3u8_future_2" = "• Comunicación con la app vía native messaging o custom URL scheme";
-"m3u8_future_3" = "• Botón 'Enviar a Video Grabber' desde el navegador";
-
 /* Notifications */
 "notif_download_complete" = "Descarga completada";
 "notif_download_error" = "Error en descarga";
@@ -191,3 +177,22 @@
 "sidebar_urls_label" = "URLs";
 "staged_settings_title" = "Configuración del video";
 "sidebar_start" = "Iniciar";
+
+/* Browser tab */
+"tab_browser" = "Navegador";
+"browser_address_placeholder" = "Ingresá una URL…";
+"browser_cookie_count" = "%d cookies almacenadas";
+"browser_use_cookies" = "Usar en descargas";
+"browser_no_cookies" = "Sin cookies aún — navegá e iniciá sesión para capturarlas";
+"browser_login_hint" = "Iniciá sesión aquí, luego escaneá o descargá";
+"browser_scan_tooltip" = "Escanear esta página en busca de videos descargables";
+
+/* Page scan */
+"add_url_tooltip" = "Agregar URL a la lista de descargas";
+"scan_page_tooltip" = "Escanear esta página para descubrir videos embebidos";
+"page_scan_title" = "Videos encontrados en la página";
+"page_scan_scanning" = "Escaneando la página en busca de videos...";
+"page_scan_no_videos" = "No se encontraron videos descargables en esta página.";
+"page_scan_error" = "No se pudo escanear la página. Revisá la URL y tu conexión.";
+"page_scan_selected_count" = "%d / %d seleccionados";
+"page_scan_add_selected" = "Agregar a la cola";

@@ -307,7 +307,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.05;
+				MARKETING_VERSION = 1.07;
 				OTHER_CODE_SIGN_FLAGS = "--options runtime";
 				PRODUCT_BUNDLE_IDENTIFIER = "charlysole.Video-grabber";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -346,7 +346,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.05;
+				MARKETING_VERSION = 1.07;
 				OTHER_CODE_SIGN_FLAGS = "--options runtime";
 				PRODUCT_BUNDLE_IDENTIFIER = "charlysole.Video-grabber";
 				PRODUCT_NAME = "$(TARGET_NAME)";
