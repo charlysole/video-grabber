@@ -4,7 +4,6 @@
 
 ![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
-![License](https://img.shields.io/badge/license-MIT-green)
 ![Notarized](https://img.shields.io/badge/Apple%20Notarized-yes-brightgreen)
 ![Release](https://img.shields.io/github/v/release/charlysole/video-grabber)
 ![Downloads](https://img.shields.io/github/downloads/charlysole/video-grabber/total)
@@ -21,7 +20,7 @@ Requires **macOS 13 Ventura or later** · Apple Silicon & Intel supported
 
 ## What is Video Grabber?
 
-Video Grabber is a **free, open source, native macOS app** that wraps the power of [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org) into a clean SwiftUI interface. It lets you download, convert, trim, and compress videos from over **1000 websites** — all without touching the Terminal.
+Video Grabber is a **free, native macOS app** that wraps the power of [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org) into a clean SwiftUI interface. It lets you download, convert, trim, and compress videos from over **1000 websites** — all without touching the Terminal.
 
 Whether you want to save a YouTube video in 4K, extract audio from a podcast, grab an Instagram reel, or batch-download an entire playlist — Video Grabber handles it from a single window.
 
@@ -33,7 +32,9 @@ Whether you want to save a YouTube video in 4K, extract audio from a podcast, gr
 - **YouTube** — videos, Shorts, playlists, channels (with bot-detection bypass)
 - **Instagram** — reels, posts, stories
 - **TikTok** — videos and slideshows
-- **Vimeo** — public and domain-restricted videos
+- **Vimeo** — public, unlisted and domain-restricted videos
+- **Frame.io** — share links download the **original file** at full quality (when the sharer allows downloads)
+- **Box** — shared links, with video and audio merged into a single file
 - **X / Twitter** — video tweets
 - **Facebook** — public video posts
 - **M3U8 / HLS streams** — live and on-demand streaming URLs
@@ -60,7 +61,7 @@ Whether you want to save a YouTube video in 4K, extract audio from a podcast, gr
 | **Video trim** | Set start and end time (H:MM:SS) |
 | **Format conversion** | Convert to MP4, MOV, MKV, or AVI after download |
 | **Audio extraction** | Save as MP3 instead of video |
-| **Target file size** | Two-pass ffmpeg compression to hit a specific MB target |
+| **Target file size** | Compress to a specific MB target — precise (x264, two passes) or fast (hardware, VideoToolbox). Several videos can be compressed in one batch |
 | **Subtitle download** | Fetch automatic subtitles (English / Spanish) |
 | **Integrity check** | Verify the downloaded file after completion |
 | **Playlist entry picker** | Select specific videos from a playlist |
@@ -94,7 +95,7 @@ Whether you want to save a YouTube video in 4K, extract audio from a podcast, gr
 
 ## Installation
 
-1. Download `VideoGrabber-1.07.dmg` from the [Releases](../../releases/latest) page
+1. Download the latest `VideoGrabber-x.y.z.dmg` from the [Releases](../../releases/latest) page
 2. Open the `.dmg` and drag **Video Grabber.app** to your Applications folder
 3. Launch the app
 4. **On first launch, tap "Update" in the welcome screen** — this downloads the latest yt-dlp and deno (the JavaScript runtime needed for YouTube). Without this step, YouTube downloads will fail.
@@ -106,56 +107,30 @@ Whether you want to save a YouTube video in 4K, extract audio from a podcast, gr
 | Tool | Purpose | How to get |
 |---|---|---|
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | Downloads video from 1000+ sites | **Update button in Preferences** |
-| [ffmpeg](https://ffmpeg.org) | Trim, convert, and compress video | Bundled with the app |
+| [ffmpeg](https://ffmpeg.org) | Merge, trim, convert, and compress video | Bundled with the app (universal: Apple Silicon & Intel) |
 | [deno](https://deno.com) | JavaScript runtime for YouTube n-challenge | Downloaded automatically with yt-dlp update |
 
 No Terminal or Homebrew required.
 
 ---
 
-## What's New in v1.07
+## What's New in v1.14
 
-### In-App Browser
-A full browser tab is now built into the app. Browse to any page, log in with your account, and your session cookies are automatically used for downloads — solving authentication issues on Vimeo, Patreon, educational platforms, and more.
+### v1.14.2
+- **Frame.io** share links (`next.frame.io/share/…`, `f.io/…`) now download the original file at full quality, with its original name. If the sharer disabled downloads, the app says so.
 
-### Video Page Scanner
-While in the browser, tap 🔍 to scan the current page for embedded videos. The scanner uses JavaScript DOM inspection plus yt-dlp to detect `<video>` elements, iframe embeds (YouTube, Vimeo, Dailymotion, Twitch…), and data attributes — all deduplicated and titled correctly.
+### v1.14.1
+- **Video and audio no longer end up in separate files** on Apple Silicon Macs without Rosetta: the bundled ffmpeg is now universal.
+- The app no longer quits when *Improve compatibility* (or another conversion) can't start ffmpeg — it shows an error instead.
 
-### Automatic M3U8 Stream Capture
-The browser intercepts XHR and fetch requests in real time. When a `.m3u8` streaming URL is detected, it appears in a panel below the browser toolbar — tap "Add" to queue it immediately.
+### v1.14.0
+- **YouTube** — mid-download 403 errors are retried from scratch, and yt-dlp is kept up to date automatically.
+- **Vimeo** unlisted videos — when yt-dlp can't get them, the app captures the stream from a hidden browser.
+- **Capture from browser** for failed downloads on sites yt-dlp doesn't support.
+- **Batch compression** and a fast hardware (VideoToolbox) compression mode.
+- **Browser cookies** — pick Firefox, Chrome, Brave, Edge and others as the cookie source in Preferences.
 
-### YouTube Bot-Detection Fix
-YouTube now requires a JavaScript runtime to solve its "n challenge". Video Grabber automatically downloads [deno](https://deno.com) alongside yt-dlp and passes it to yt-dlp for every YouTube download. No configuration needed.
-
-### yt-dlp One-Click Updater
-The bundled yt-dlp can now be updated to the latest version directly from **Preferences → Dependencies** (or from the welcome screen on first launch). The updater fetches the latest `yt-dlp_macos` and `deno` binaries from their official GitHub releases, sets the correct permissions, and removes quarantine automatically.
-
-### Per-Row Download Controls
-Every download row now has inline **pause**, **resume**, and **stop** buttons — no need to select a job first. A **Stop All** button in the queue header halts everything at once.
-
-### Improved Error Messages
-Errors are now classified more precisely:
-- YouTube bot detection (429 / "confirm you're not a bot") → clear instructions to update yt-dlp
-- Cookie permission errors → explains which browsers are and aren't supported
-- Rate limiting → distinguished from network failures
-
-### Removed
-- *Cancel Current* button (replaced by per-row stop + Stop All)
-- *Capture M3U8* button (M3U8 capture now happens automatically in the browser)
-- *Open HandBrake* button and HandBrake dependency detection
-- System browser cookie picker (replaced by in-app browser cookies)
-
----
-
-## Building from Source
-
-```bash
-git clone https://github.com/charlysole/video-grabber.git
-cd "video-grabber/Video grabber"
-open "Video grabber.xcodeproj"
-```
-
-Requires **Xcode 15 or later**. No additional configuration needed — all dependencies are managed at runtime.
+See the [Releases](../../releases) page for the full history.
 
 ---
 
@@ -179,7 +154,7 @@ Video Grabber is a native **SwiftUI / AppKit** app following an MVVM architectur
 Yes — universal binary, runs natively on both Apple Silicon (arm64) and Intel (x86_64).
 
 **Is it free?**
-Yes, completely free and open source under the MIT license. If you find it useful, [donations are appreciated](https://www.paypal.com/donate?business=G8KQK7TRUJLJ6&no_recurring=0&item_name=Support+Video+Grabber+to+keep+a+simple%2C+powerful+macOS+video+tool+growing+and+improving+for+everyone.&currency_code=USD).
+Yes, completely free. If you find it useful, [donations are appreciated](https://www.paypal.com/donate?business=G8KQK7TRUJLJ6&no_recurring=0&item_name=Support+Video+Grabber+to+keep+a+simple%2C+powerful+macOS+video+tool+growing+and+improving+for+everyone.&currency_code=USD).
 
 **Does it support 4K and 8K?**
 Yes — the format picker lists all available resolutions including 4K (2160p) and 8K when offered by the source.
@@ -199,12 +174,6 @@ Only for downloading. The app itself, the queue, and the history work offline.
 
 - **Bug reports / feature requests** → [open an issue](../../issues)
 - **Support development** → [Donate via PayPal](https://www.paypal.com/donate?business=G8KQK7TRUJLJ6&no_recurring=0&item_name=Support+Video+Grabber+to+keep+a+simple%2C+powerful+macOS+video+tool+growing+and+improving+for+everyone.&currency_code=USD)
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
